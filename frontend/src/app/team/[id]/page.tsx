@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import TeamFavouriteButton from "@/components/TeamFavouriteButton";
 
 interface Team {
   id: number;
@@ -115,7 +116,7 @@ function TeamProfileContent() {
   function FixtureCard({ match }: { match: Fixture }) {
     const isFinished = finished.includes(match.fixture.status.short);
     return (
-      <Link href={`/match/${match.fixture.id}`} className="block rounded-xl border border-slate-800 bg-slate-950/70 p-4 transition hover:border-emerald-500/50">
+      <article className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 transition hover:border-emerald-500/50">
         <div className="mb-3 flex items-center justify-between gap-3 text-xs text-slate-500">
           <span className="truncate">{match.league?.name || "Football"}</span>
           <span>{dateLabel(match.fixture.date)}</span>
@@ -123,7 +124,7 @@ function TeamProfileContent() {
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <img src={match.teams.home.logo} alt="" className="h-7 w-7 object-contain" />
-            <span className="truncate text-sm font-semibold text-slate-200">{match.teams.home.name}</span>
+            <Link href={`/team/${match.teams.home.id}`} onClick={(event) => event.stopPropagation()} className="truncate text-sm font-semibold text-slate-200 transition hover:text-emerald-300 hover:underline" aria-label={`View ${match.teams.home.name} team profile`}>{match.teams.home.name}</Link>
           </div>
           <div className="text-center">
             <p className="text-lg font-black text-white">
@@ -132,11 +133,14 @@ function TeamProfileContent() {
             <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{isFinished ? "Full time" : match.fixture.status.short === "NS" ? "Upcoming" : match.fixture.status.long}</p>
           </div>
           <div className="flex min-w-0 items-center justify-end gap-2">
-            <span className="truncate text-right text-sm font-semibold text-slate-200">{match.teams.away.name}</span>
+            <Link href={`/team/${match.teams.away.id}`} className="truncate text-right text-sm font-semibold text-slate-200 transition hover:text-emerald-300 hover:underline" aria-label={`View ${match.teams.away.name} team profile`}>{match.teams.away.name}</Link>
             <img src={match.teams.away.logo} alt="" className="h-7 w-7 object-contain" />
           </div>
         </div>
-      </Link>
+        <div className="mt-4 flex justify-end border-t border-slate-800 pt-3">
+          <Link href={`/match/${match.fixture.id}`} className="text-xs font-bold text-emerald-400 transition hover:text-emerald-300">View Match Centre →</Link>
+        </div>
+      </article>
     );
   }
 
@@ -163,6 +167,7 @@ function TeamProfileContent() {
                   <span className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-300">Founded: {team.founded || "N/A"}</span>
                   <span className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-300">{team.national ? "International" : "Club football"}</span>
                   <Link href={`/team-compare?first=${team.id}`} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300 hover:bg-emerald-500/20">Compare this team →</Link>
+                  <TeamFavouriteButton team={team} venue={venue} />
                 </div>
               </div>
             </div>

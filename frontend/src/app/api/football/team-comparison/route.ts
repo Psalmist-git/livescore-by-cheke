@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchFootballApiData } from "@/lib/football-api";
 
 const API_BASE = "https://v3.football.api-sports.io";
 const FINISHED = new Set(["FT", "AET", "PEN"]);
 
 type HeadToHeadMatch = {
-  id: number; date: string; homeId: number; awayId: number; home: string; away: string;
-  homeLogo: string; awayLogo: string; homeGoals: number | null;
-  awayGoals: number | null; competition: string;
+  id: number;
+  date: string;
+  homeId: number;
+  awayId: number;
+  home: string;
+  away: string;
+  homeLogo: string;
+  awayLogo: string;
+  homeGoals: number | null;
+  awayGoals: number | null;
+  competition: string;
 };
 
 type Fixture = {
@@ -18,6 +27,48 @@ type Fixture = {
   };
   goals: { home: number | null; away: number | null };
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || isNumber(value);
+}
+
+function isFixture(value: unknown): value is Fixture {
+  if (!isRecord(value)) return false;
+  const fixture = value.fixture;
+  const league = value.league;
+  const teams = value.teams;
+  const goals = value.goals;
+
+  if (!isRecord(fixture) || !isRecord(fixture.status)) return false;
+  if (!isRecord(league) || !isRecord(teams) || !isRecord(goals)) return false;
+  const home = teams.home;
+  const away = teams.away;
+  if (!isRecord(home) || !isRecord(away)) return false;
+
+  return (
+    isNumber(fixture.id) &&
+    typeof fixture.date === "string" &&
+    typeof fixture.status.short === "string" &&
+    typeof league.name === "string" &&
+    typeof league.country === "string" &&
+    isNumber(home.id) &&
+    typeof home.name === "string" &&
+    typeof home.logo === "string" &&
+    isNumber(away.id) &&
+    typeof away.name === "string" &&
+    typeof away.logo === "string" &&
+    isNullableNumber(goals.home) &&
+    isNullableNumber(goals.away)
+  );
+}
 
 function summarize(teamId: number, fixtures: Fixture[]) {
   const played = fixtures
@@ -63,7 +114,15 @@ function summarize(teamId: number, fixtures: Fixture[]) {
 export async function GET(request: NextRequest) {
   const home = request.nextUrl.searchParams.get("home");
   const away = request.nextUrl.searchParams.get("away");
-  if (!home || !away || !/^[0-9]+$/.test(home) || !/^[0-9]+$/.test(away) || home === away) {
+  if (
+    !home ||
+    !away ||
+    !/^[0-9]+$/.test(home) ||
+    !/^[0-9]+$/.test(away) ||
+    Number(home) <= 0 ||
+    Number(away) <= 0 ||
+    home === away
+  ) {
     return NextResponse.json({ success: false, error: "Select two different valid teams." }, { status: 400 });
   }
 
@@ -73,63 +132,54 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const fetchTeamFixtures = async (teamId: string): Promise<Fixture[]> => {
-      const url = new URL(`${API_BASE}/fixtures`);
-      url.searchParams.set("team", teamId);
-      url.searchParams.set("last", "10");
-      url.searchParams.set("timezone", "Africa/Lagos");
-      const response = await fetch(url, {
-        headers: { "x-apisports-key": apiKey },
+    const fetchFixtures = async (url: URL): Promise<Fixture[]> => {
+      const data = await fetchFootballApiData<unknown>(url, apiKey, {
         next: { revalidate: 900 },
       });
-      if (!response.ok) throw new Error("Provider request failed");
-      const payload = await response.json();
-      const hasErrors = payload?.errors && Object.keys(payload.errors).length > 0;
-      if (hasErrors || !Array.isArray(payload?.response)) throw new Error("Invalid provider response");
-      return payload.response as Fixture[];
+      return data.response.filter(isFixture);
     };
 
-    const fetchHeadToHead = async (): Promise<HeadToHeadMatch[]> => {
-      const url = new URL(`${API_BASE}/fixtures`);
-      url.searchParams.set("h2h", `${home}-${away}`);
-      url.searchParams.set("last", "5");
-      url.searchParams.set("timezone", "Africa/Lagos");
-      const response = await fetch(url, {
-        headers: { "x-apisports-key": apiKey },
-        next: { revalidate: 900 },
-      });
-      if (!response.ok) throw new Error("Provider request failed");
-      const payload = await response.json();
-      const hasErrors = payload?.errors && Object.keys(payload.errors).length > 0;
-      if (hasErrors || !Array.isArray(payload?.response)) throw new Error("Invalid provider response");
-      return payload.response
-        .filter((item: any) => FINISHED.has(item.fixture.status.short))
-        .map((item: any) => ({
-          id: item.fixture.id,
-          date: item.fixture.date,
-          homeId: item.teams.home.id,
-          awayId: item.teams.away.id,
-          home: item.teams.home.name,
-          away: item.teams.away.name,
-          homeLogo: item.teams.home.logo,
-          awayLogo: item.teams.away.logo,
-          homeGoals: item.goals.home,
-          awayGoals: item.goals.away,
-          competition: item.league.name,
-        }));
-    };
+    const homeUrl = new URL(`${API_BASE}/fixtures`);
+    homeUrl.searchParams.set("team", home);
+    homeUrl.searchParams.set("last", "10");
+    homeUrl.searchParams.set("timezone", "Africa/Lagos");
 
-    const [homeFixtures, awayFixtures, headToHead] = await Promise.all([
-      fetchTeamFixtures(home),
-      fetchTeamFixtures(away),
-      fetchHeadToHead(),
+    const awayUrl = new URL(`${API_BASE}/fixtures`);
+    awayUrl.searchParams.set("team", away);
+    awayUrl.searchParams.set("last", "10");
+    awayUrl.searchParams.set("timezone", "Africa/Lagos");
+
+    const headToHeadUrl = new URL(`${API_BASE}/fixtures`);
+    headToHeadUrl.searchParams.set("h2h", `${home}-${away}`);
+    headToHeadUrl.searchParams.set("last", "5");
+    headToHeadUrl.searchParams.set("timezone", "Africa/Lagos");
+
+    const [homeFixtures, awayFixtures, headToHeadFixtures] = await Promise.all([
+      fetchFixtures(homeUrl),
+      fetchFixtures(awayUrl),
+      fetchFixtures(headToHeadUrl),
     ]);
-    const homeSummary = summarize(Number(home), homeFixtures);
-    const awaySummary = summarize(Number(away), awayFixtures);
+
+    const headToHead: HeadToHeadMatch[] = headToHeadFixtures
+      .filter((item) => FINISHED.has(item.fixture.status.short))
+      .map((item) => ({
+        id: item.fixture.id,
+        date: item.fixture.date,
+        homeId: item.teams.home.id,
+        awayId: item.teams.away.id,
+        home: item.teams.home.name,
+        away: item.teams.away.name,
+        homeLogo: item.teams.home.logo,
+        awayLogo: item.teams.away.logo,
+        homeGoals: item.goals.home,
+        awayGoals: item.goals.away,
+        competition: item.league.name,
+      }));
+
     return NextResponse.json({
       success: true,
-      home: homeSummary,
-      away: awaySummary,
+      home: summarize(Number(home), homeFixtures),
+      away: summarize(Number(away), awayFixtures),
       headToHead,
     });
   } catch (error) {

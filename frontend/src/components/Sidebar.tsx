@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const leagues = [
-  "Premier League",
-  "La Liga",
-  "Bundesliga",
-  "Serie A",
-  "Ligue 1",
-  "Champions League",
-  "Europa League",
+  { name: "Premier League", id: 39 },
+  { name: "La Liga", id: 140 },
+  { name: "Bundesliga", id: 78 },
+  { name: "Serie A", id: 135 },
+  { name: "Ligue 1", id: 61 },
+  { name: "Champions League", id: 2 },
+  { name: "Europa League", id: 3 },
 ];
 
 const quickLinks = [
@@ -83,15 +83,15 @@ export default function Sidebar() {
         <div className="p-2">
           {leagues.map((league, index) => (
             <Link
-              key={league}
-              href="/leagues"
+              key={league.id}
+              href={`/leagues?league=${league.id}`}
               className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#243444] text-xs font-black text-emerald-400">
                 {index + 1}
               </span>
 
-              <span>{league}</span>
+              <span>{league.name}</span>
             </Link>
           ))}
         </div>

@@ -28,6 +28,8 @@ interface EventTimelineProps {
   events: MatchEvent[];
   homeTeam: string;
   awayTeam: string;
+  homeTeamId?: number;
+  awayTeamId?: number;
 }
 
 type EventFilter = "all" | "goals" | "cards" | "substitutions" | "var";
@@ -206,6 +208,8 @@ export default function EventTimeline({
   events,
   homeTeam,
   awayTeam,
+  homeTeamId,
+  awayTeamId,
 }: EventTimelineProps) {
   const [activeFilter, setActiveFilter] =
     useState<EventFilter>("all");
@@ -306,7 +310,9 @@ export default function EventTimeline({
             <div className="p-5">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h4 className="truncate text-sm font-bold text-emerald-300">
-                  {homeTeam}
+                  {homeTeamId ? (
+                    <Link href={`/team/${homeTeamId}`} className="transition hover:text-emerald-200 hover:underline">{homeTeam}</Link>
+                  ) : homeTeam}
                 </h4>
 
                 <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
@@ -331,7 +337,9 @@ export default function EventTimeline({
             <div className="p-5">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h4 className="truncate text-sm font-bold text-sky-300">
-                  {awayTeam}
+                  {awayTeamId ? (
+                    <Link href={`/team/${awayTeamId}`} className="transition hover:text-sky-200 hover:underline">{awayTeam}</Link>
+                  ) : awayTeam}
                 </h4>
 
                 <span className="rounded-full bg-sky-400/10 px-2.5 py-1 text-xs font-bold text-sky-300">
@@ -461,7 +469,9 @@ export default function EventTimeline({
 
               <div className="mb-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                 <span className="truncate text-left text-xs font-bold text-emerald-300">
-                  {homeTeam}
+                  {homeTeamId ? (
+                    <Link href={`/team/${homeTeamId}`} className="transition hover:text-emerald-200 hover:underline">{homeTeam}</Link>
+                  ) : homeTeam}
                 </span>
 
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
@@ -469,7 +479,9 @@ export default function EventTimeline({
                 </span>
 
                 <span className="truncate text-right text-xs font-bold text-sky-300">
-                  {awayTeam}
+                  {awayTeamId ? (
+                    <Link href={`/team/${awayTeamId}`} className="transition hover:text-sky-200 hover:underline">{awayTeam}</Link>
+                  ) : awayTeam}
                 </span>
               </div>
 

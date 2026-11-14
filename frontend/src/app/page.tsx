@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import Header from "@/components/Header";
@@ -98,6 +98,8 @@ export default function HomePage() {
 
   const [liveError, setLiveError] = useState("");
   const [fixturesError, setFixturesError] = useState("");
+  const liveRequestInFlight = useRef(false);
+  const fixturesRequestInFlight = useRef(false);
 
   const { favourites, loaded: favouritesLoaded } = useFavourites();
   const { favourites: followedLeagues, loaded: followedLeaguesLoaded } = useFavouriteLeagues();
@@ -114,10 +116,15 @@ export default function HomePage() {
     (a, b) => Number(isFavouriteMatch(b)) - Number(isFavouriteMatch(a))
   );
 
-  const loadLiveMatches = useCallback(async () => {
+  const loadLiveMatches = useCallback(async (silent = false) => {
+    if (liveRequestInFlight.current) return;
+    liveRequestInFlight.current = true;
+
     try {
-      setLiveLoading(true);
-      setLiveError("");
+      if (!silent) {
+        setLiveLoading(true);
+        setLiveError("");
+      }
 
       const response = await fetch("/api/football/live", {
         cache: "no-store",
@@ -158,17 +165,26 @@ export default function HomePage() {
       }));
 
       setLiveMatches(formattedMatches);
+      setLiveError("");
     } catch (error) {
-      setLiveError("Unable to load data right now. Please try again later.");
+      if (!silent) {
+        setLiveError("Unable to load data right now. Please try again later.");
+      }
     } finally {
-      setLiveLoading(false);
+      liveRequestInFlight.current = false;
+      if (!silent) setLiveLoading(false);
     }
   }, []);
 
-  const loadUpcomingMatches = useCallback(async () => {
+  const loadUpcomingMatches = useCallback(async (silent = false) => {
+    if (fixturesRequestInFlight.current) return;
+    fixturesRequestInFlight.current = true;
+
     try {
-      setFixturesLoading(true);
-      setFixturesError("");
+      if (!silent) {
+        setFixturesLoading(true);
+        setFixturesError("");
+      }
 
       const response = await fetch("/api/football/fixtures", {
         cache: "no-store",
@@ -186,6 +202,7 @@ export default function HomePage() {
         status: "UPCOMING",
         kickoff: formatKickoff(item.fixture.date),
         homeTeam: {
+          id: item.teams.home.id,
           name: item.teams.home.name,
           shortName:
             item.teams.home.code ||
@@ -193,6 +210,7 @@ export default function HomePage() {
           logo: item.teams.home.logo,
         },
         awayTeam: {
+          id: item.teams.away.id,
           name: item.teams.away.name,
           shortName:
             item.teams.away.code ||
@@ -204,16 +222,34 @@ export default function HomePage() {
       }));
 
       setUpcomingMatches(formattedMatches);
+      setFixturesError("");
     } catch (error) {
-      setFixturesError("Unable to load data right now. Please try again later.");
+      if (!silent) {
+        setFixturesError("Unable to load data right now. Please try again later.");
+      }
     } finally {
-      setFixturesLoading(false);
+      fixturesRequestInFlight.current = false;
+      if (!silent) setFixturesLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void loadLiveMatches();
     void loadUpcomingMatches();
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadLiveMatches(true);
+      void loadUpcomingMatches(true);
+    };
+
+    const interval = window.setInterval(refreshWhenVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [loadLiveMatches, loadUpcomingMatches]);
 
   return (
@@ -291,7 +327,7 @@ export default function HomePage() {
 
               <div className="rounded-xl border border-white/[0.07] bg-[#141e29] p-4 sm:p-5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Today's Fixtures
+                  Today&apos;s Fixtures
                 </div>
                 <p className="mt-3 text-3xl font-black text-emerald-400">
                   {fixturesLoading
@@ -440,7 +476,7 @@ export default function HomePage() {
                     Coming Up
                   </p>
                   <h2 className="mt-2 text-xl font-black sm:text-2xl">
-                    Today's Fixtures
+                    Today&apos;s Fixtures
                   </h2>
                 </div>
 
@@ -465,7 +501,7 @@ export default function HomePage() {
 
               {fixturesLoading && (
                 <div className="p-8 text-center text-sm text-slate-400">
-                  Loading today's fixtures...
+                  Loading today&apos;s fixtures...
                 </div>
               )}
 

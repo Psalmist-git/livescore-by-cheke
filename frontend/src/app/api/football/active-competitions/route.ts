@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { fetchFootballApiData, FootballApiRequestError } from "@/lib/football-api";
 
 const API = "https://v3.football.api-sports.io";
 const WINDOW_DAYS = 14;
-const EXCLUDED = /\b(u\s?17|u\s?18|u\s?19|u\s?20|u\s?21|u\s?23|under[- ]?(17|18|19|20|21|23)|youth|academy|reserve|reserves| ii\b|b team)\b/i;
+const EXCLUDED = /\\b(u\\s?17|u\\s?18|u\\s?19|u\\s?20|u\\s?21|u\\s?23|under[- ]?(17|18|19|20|21|23)|youth|academy|reserve|reserves| ii\\b|b team)\\b/i;
 const LIVE_STATUSES = ["1H", "HT", "2H", "ET", "BT", "P", "LIVE", "INT", "SUSP"];
 const INTERNATIONAL = /world cup|world cup qualifier|qualification.*world cup|nations league|african cup of nations|afcon|africa cup|euro qualifier|european championship|uefa euro|copa america|asian cup|afc asian|gold cup|concacaf|copa afric|international friendly/i;
 const CLUB_CONTINENTAL = /club world cup|champions league|confederation cup|copa libertadores|copa sudamericana|europa league|conference league/i;
@@ -30,106 +31,189 @@ const POPULARITY: Array<[RegExp, number]> = [
   [/caf confederation cup/i, 75],
 ];
 
+type RecordValue = Record<string, unknown>;
+
+interface CompetitionFixture {
+  fixtureId: number;
+  date: string;
+  status: string;
+  league: {
+    id: number;
+    name: string;
+    country: string | null;
+    logo: string | null;
+    season: number | null;
+  };
+  homeName: string;
+  awayName: string;
+}
+
+interface CompetitionSummary {
+  id: number;
+  name: string;
+  country: string;
+  logo: string | null;
+  season: number | null;
+  category: "international" | "club";
+  liveMatches: number;
+  upcomingMatches: number;
+  nextMatch: string | null;
+  nextMatchTime: number;
+  matchesNext7Days: number;
+  matchesNext14Days: number;
+}
+
+function isRecord(value: unknown): value is RecordValue {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getRecord(value: unknown, key: string): RecordValue | null {
+  if (!isRecord(value)) return null;
+  const nested = value[key];
+  return isRecord(nested) ? nested : null;
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toCompetitionFixture(value: unknown): CompetitionFixture | null {
+  const fixture = getRecord(value, "fixture");
+  const league = getRecord(value, "league");
+  const teams = getRecord(value, "teams");
+  const home = getRecord(teams, "home");
+  const away = getRecord(teams, "away");
+  const status = getRecord(fixture, "status");
+
+  const fixtureId = getNumber(fixture?.id);
+  const leagueId = getNumber(league?.id);
+  const date = getString(fixture?.date);
+  const statusShort = getString(status?.short);
+  const leagueName = getString(league?.name);
+
+  if (
+    fixtureId === null || leagueId === null || !date ||
+    !statusShort || !leagueName
+  ) {
+    return null;
+  }
+
+  return {
+    fixtureId,
+    date,
+    status: statusShort.toUpperCase(),
+    league: {
+      id: leagueId,
+      name: leagueName,
+      country: getString(league?.country),
+      logo: getString(league?.logo),
+      season: getNumber(league?.season),
+    },
+    homeName: getString(home?.name) ?? "",
+    awayName: getString(away?.name) ?? "",
+  };
+}
+
 function popularity(name: string): number {
   return POPULARITY.find(([pattern]) => pattern.test(name))?.[1] ?? 45;
 }
 
-function isInternational(league: any): boolean {
-  const name = String(league.name || "");
-  if (CLUB_CONTINENTAL.test(name)) return false;
-  return INTERNATIONAL.test(name);
+function isInternational(leagueName: string): boolean {
+  if (CLUB_CONTINENTAL.test(leagueName)) return false;
+  return INTERNATIONAL.test(leagueName);
 }
 
 export async function GET() {
   const key = process.env.API_FOOTBALL_KEY;
   if (!key) {
-    return NextResponse.json({ success: false, error: "Football API key is missing." }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Football API is not configured." },
+      { status: 503 }
+    );
   }
 
   try {
-    const headers = { "x-apisports-key": key };
     const urls = [
-      API + "/fixtures?next=100&timezone=Africa%2FLagos",
-      API + "/fixtures?live=all&timezone=Africa%2FLagos",
+      new URL(`${API}/fixtures?next=100&timezone=Africa%2FLagos`),
+      new URL(`${API}/fixtures?live=all&timezone=Africa%2FLagos`),
     ];
-    const responses = await Promise.all(
-      urls.map((url) => fetch(url, { headers, next: { revalidate: 900 } }))
-    );
-    const payloads = await Promise.all(responses.map((response) => response.json()));
 
-    for (let index = 0; index < responses.length; index++) {
-      if (!responses[index].ok || (payloads[index].errors && Object.keys(payloads[index].errors).length)) {
-        throw new Error(
-          JSON.stringify(payloads[index].errors || "Competition data is temporarily unavailable.")
-        );
-      }
-    }
+    const payloads = await Promise.all(
+      urls.map((url) =>
+        fetchFootballApiData<unknown>(url, key, { next: { revalidate: 900 } })
+      )
+    );
 
     const now = Date.now();
     const windowEnd = now + WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    const fixtures = new Map<number, any>();
+    const fixtures = new Map<number, CompetitionFixture>();
 
-    for (const fixture of payloads.flatMap((payload) => payload.response || [])) {
-      const fixtureId = fixture.fixture?.id;
-      const league = fixture.league;
-      if (!fixtureId || !league?.id) continue;
+    for (const rawFixture of payloads.flatMap((payload) => payload.response)) {
+      const fixture = toCompetitionFixture(rawFixture);
+      if (!fixture) continue;
 
-      const teams = String(fixture.teams?.home?.name || "") + " " + String(fixture.teams?.away?.name || "");
-      if (EXCLUDED.test(String(league.name || "") + " " + teams)) continue;
+      const { league, status, date } = fixture;
+      const teams = `${fixture.homeName} ${fixture.awayName}`;
+      if (EXCLUDED.test(`${league.name} ${teams}`)) continue;
 
-      const status = String(fixture.fixture?.status?.short || "").toUpperCase();
-      const kickoff = new Date(fixture.fixture?.date || "").getTime();
+      const kickoff = new Date(date).getTime();
       const live = LIVE_STATUSES.includes(status);
       const upcoming = ["NS", "TBD"].includes(status);
 
       if (!live && (!upcoming || !Number.isFinite(kickoff) || kickoff > windowEnd)) continue;
       if (upcoming && kickoff < now - 60 * 60 * 1000) continue;
 
-      fixtures.set(fixtureId, fixture);
+      fixtures.set(fixture.fixtureId, fixture);
     }
 
-    const grouped = new Map<number, any>();
+    const grouped = new Map<number, CompetitionSummary>();
     let internationalFixtureCount = 0;
     let clubFixtureCount = 0;
 
     for (const fixture of fixtures.values()) {
-      const league = fixture.league;
-      const id = Number(league.id);
-      const status = String(fixture.fixture.status.short || "").toUpperCase();
+      const { league, status, date } = fixture;
+      const kickoff = new Date(date).getTime();
       const live = LIVE_STATUSES.includes(status);
-      const kickoff = new Date(fixture.fixture.date).getTime();
-      const international = isInternational(league);
+      const international = isInternational(league.name);
 
       if (international) internationalFixtureCount++;
       else clubFixtureCount++;
 
-      const current = grouped.get(id) || {
-        id,
-        name: league.name,
-        country: league.country || "International",
-        logo: league.logo,
-        season: league.season,
-        category: international ? "international" : "club",
-        liveMatches: 0,
-        upcomingMatches: 0,
-        nextMatch: null as string | null,
-        nextMatchTime: Number.POSITIVE_INFINITY,
-        matchesNext7Days: 0,
-        matchesNext14Days: 0,
-      };
+      let current = grouped.get(league.id);
+      if (!current) {
+        current = {
+          id: league.id,
+          name: league.name,
+          country: league.country || "International",
+          logo: league.logo,
+          season: league.season,
+          category: international ? "international" : "club",
+          liveMatches: 0,
+          upcomingMatches: 0,
+          nextMatch: null,
+          nextMatchTime: Number.POSITIVE_INFINITY,
+          matchesNext7Days: 0,
+          matchesNext14Days: 0,
+        };
+      }
 
-      if (live) current.liveMatches++;
-      else {
+      if (live) {
+        current.liveMatches++;
+      } else {
         current.upcomingMatches++;
         if (kickoff < current.nextMatchTime) {
           current.nextMatchTime = kickoff;
-          current.nextMatch = fixture.fixture.date;
+          current.nextMatch = date;
         }
         if (kickoff <= now + 7 * 24 * 60 * 60 * 1000) current.matchesNext7Days++;
         current.matchesNext14Days++;
       }
 
-      grouped.set(id, current);
+      grouped.set(league.id, current);
     }
 
     const competitions = [...grouped.values()]
@@ -169,9 +253,13 @@ export async function GET() {
       competitions,
     });
   } catch (error) {
+    console.error("Active competitions API error:", error);
+    const status = error instanceof FootballApiRequestError ? error.status : 502;
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : "Unable to load active competitions.",
-    }, { status: 502 });
+      error: status === 429
+        ? "The football data provider has reached its request limit. Please try again later."
+        : "Unable to load active competitions right now. Please try again later.",
+    }, { status });
   }
 }

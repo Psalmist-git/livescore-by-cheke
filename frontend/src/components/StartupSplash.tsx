@@ -2,13 +2,25 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 export default function StartupSplash() {
+  const pathname = usePathname();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // The branded intro is only for the public home page. It must never
+    // cover login, registration, match pages, or other public routes.
+    if (pathname !== "/") {
+      setVisible(false);
+      return;
+    }
+
     try {
       if (sessionStorage.getItem("livescore-splash-shown") === "yes") {
+        // Explicitly hide on subsequent effect runs (including React
+        // Strict Mode's development setup/cleanup cycle).
+        setVisible(false);
         return;
       }
 
@@ -21,12 +33,12 @@ export default function StartupSplash() {
 
     const timer = window.setTimeout(() => {
       setVisible(false);
-    }, 1800);
+    }, 1400);
 
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [pathname]);
 
-  if (!visible) {
+  if (!visible || pathname !== "/") {
     return null;
   }
 

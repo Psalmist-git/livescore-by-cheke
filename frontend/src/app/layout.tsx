@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import StartupSplash from "@/components/StartupSplash";
 import "./globals.css";
@@ -57,14 +59,18 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: LayoutProps<"/">) {
+}: {
+  children: ReactNode;
+}) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <StartupSplash />
+        <Suspense fallback={null}>
+          <StartupSplash />
+        </Suspense>
         {children}
       </body>
     </html>

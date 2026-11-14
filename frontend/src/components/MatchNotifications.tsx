@@ -53,11 +53,15 @@ function sendNotification(title: string, body: string, tag: string) {
     return;
   }
 
-  new Notification(title, {
-    body,
-    tag,
-    icon: "/favicon.ico",
-  });
+  try {
+    new Notification(title, {
+      body,
+      tag,
+      icon: "/favicon.ico",
+    });
+  } catch {
+    // Browser notification APIs can still fail after permission is granted.
+  }
 }
 
 export default function MatchNotifications({
@@ -74,6 +78,18 @@ export default function MatchNotifications({
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsInitialised = useRef(false);
   const previousStatus = useRef(status.toUpperCase());
+  const previousMatchId = useRef(matchId);
+
+  useEffect(() => {
+    if (previousMatchId.current === matchId) return;
+
+    previousMatchId.current = matchId;
+    seenEvents.current.clear();
+    eventsInitialised.current = false;
+    previousStatus.current = status.toUpperCase();
+    setEnabled(false);
+    setMessage("");
+  }, [matchId, status]);
 
   // Seed existing events without notifying for moments that happened
   // before the user opened the Match Centre. Later updates are live events.
@@ -124,13 +140,18 @@ export default function MatchNotifications({
 
     if ("Notification" in window) {
       setPermission(Notification.permission);
-      const savedPreference = window.localStorage.getItem(
-        `livescore:match-alerts:${matchId}`
-      );
-      setEnabled(
-        savedPreference === "true" &&
-        Notification.permission === "granted"
-      );
+      try {
+        const savedPreference = window.localStorage.getItem(
+          `livescore:match-alerts:${matchId}`
+        );
+        setEnabled(
+          savedPreference === "true" &&
+          Notification.permission === "granted"
+        );
+      } catch {
+        setEnabled(false);
+        setMessage("Browser storage is unavailable, so alert preferences cannot be restored.");
+      }
     } else {
       setMessage("This browser does not support notifications.");
     }
@@ -142,36 +163,49 @@ export default function MatchNotifications({
       return;
     }
 
-    let result = Notification.permission;
+    try {
+      let result = Notification.permission;
 
-    if (result === "default") {
-      result = await Notification.requestPermission();
-    }
+      if (result === "default") {
+        result = await Notification.requestPermission();
+      }
 
-    setPermission(result);
+      setPermission(result);
 
-    if (result === "granted") {
-      setEnabled(true);
-      window.localStorage.setItem(
-        `livescore:match-alerts:${matchId}`,
-        "true"
-      );
-      setMessage("Notifications are enabled for this match.");
-    } else if (result === "denied") {
+      if (result === "granted") {
+        setEnabled(true);
+        try {
+          window.localStorage.setItem(
+            `livescore:match-alerts:${matchId}`,
+            "true"
+          );
+          setMessage("Notifications are enabled for this match.");
+        } catch {
+          setMessage("Notifications are enabled for now, but this preference could not be saved.");
+        }
+      } else if (result === "denied") {
+        setEnabled(false);
+        setMessage(
+          "Notifications are blocked. Allow them in your browser settings."
+        );
+      } else {
+        setEnabled(false);
+        setMessage("Notification permission was not granted.");
+      }
+    } catch {
       setEnabled(false);
-      setMessage(
-        "Notifications are blocked. Allow them in your browser settings."
-      );
-    } else {
-      setEnabled(false);
-      setMessage("Notification permission was not granted.");
+      setMessage("Your browser could not enable notifications. Please try again.");
     }
   }
 
   function disableNotifications() {
     setEnabled(false);
-    window.localStorage.removeItem(`livescore:match-alerts:${matchId}`);
-    setMessage("Notifications are paused.");
+    try {
+      window.localStorage.removeItem(`livescore:match-alerts:${matchId}`);
+      setMessage("Notifications are paused.");
+    } catch {
+      setMessage("Notifications are paused for this page, but the preference could not be updated.");
+    }
   }
 
   // Detect half-time and full-time transitions.

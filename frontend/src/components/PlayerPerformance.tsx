@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 interface PlayerStatistics {
   games?: {
     minutes?: number | null;
@@ -283,7 +285,13 @@ function PlayerCard({ player }: { player: MatchPlayer }) {
 
         <div className="min-w-0 flex-1">
           <h4 className="truncate text-sm font-bold text-white sm:text-base">
-            {player.player.name}
+            <Link
+              href={`/player/${player.player.id}`}
+              title={`View ${player.player.name}'s player profile`}
+              className="rounded-sm transition hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            >
+              {player.player.name}
+            </Link>
           </h4>
 
           <p className="mt-1 text-xs text-slate-400">
@@ -402,7 +410,13 @@ function TeamPlayers({ team }: { team: PlayerTeam }) {
 
         <div className="min-w-0">
           <h3 className="truncate font-bold text-white">
-            {team.team.name}
+            <Link
+              href={`/team/${team.team.id}`}
+              title={`View ${team.team.name} team profile`}
+              className="rounded-sm transition hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            >
+              {team.team.name}
+            </Link>
           </h3>
           <p className="mt-0.5 text-xs text-slate-500">
             Individual match performance

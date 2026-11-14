@@ -42,6 +42,7 @@ interface LineupPlayer {
 
 interface MatchLineup {
   team: {
+    id: number;
     name: string;
     logo: string;
   };
@@ -224,7 +225,6 @@ interface MatchStatusResponse {
   success?: boolean;
   status?: MatchDetails["fixture"]["status"];
   goals?: MatchDetails["goals"];
-  events?: MatchEvent[];
   error?: unknown;
 }
 
@@ -249,6 +249,13 @@ const LIVE_STATUSES = [
   "INT",
   "SUSP",
   "INTERRUPTED",
+];
+
+const EVENT_ELIGIBLE_STATUSES = [
+  ...LIVE_STATUSES,
+  "FT",
+  "AET",
+  "PEN",
 ];
 
 const TABS = [
@@ -504,13 +511,17 @@ export default function MatchCentreClient({
     all: { played: number; win: number; draw: number; lose: number; goals?: { for: number; against: number } };
   }>>([]);
   const [tableError, setTableError] = useState("");
+  const [standingsLoading, setStandingsLoading] = useState(false);
   const [matchNews, setMatchNews] = useState<Array<{id:string;title:string;link:string;source:string;publishedAt:string;summary?:string}>>([]);
   const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState("");
 
   const [teamForm, setTeamForm] = useState<{ home: Array<{id:number;date:string;opponent:string;goalsFor:number|null;goalsAgainst:number|null;result:"W"|"D"|"L"}>; away: Array<{id:number;date:string;opponent:string;goalsFor:number|null;goalsAgainst:number|null;result:"W"|"D"|"L"}> } | null>(null);
   const [teamFormLoading, setTeamFormLoading] = useState(false);
+  const [teamFormError, setTeamFormError] = useState("");
   const [headToHead, setHeadToHead] = useState<Array<{id:number;date:string;home:string;away:string;homeId:number;awayId:number;homeLogo?:string;awayLogo?:string;homeGoals:number|null;awayGoals:number|null;competition:string}>>([]);
   const [headToHeadLoading, setHeadToHeadLoading] = useState(false);
+  const [headToHeadError, setHeadToHeadError] = useState("");
   const [now, setNow] = useState(0);
   const [shareFeedback, setShareFeedback] = useState("");
 
@@ -521,6 +532,12 @@ export default function MatchCentreClient({
   }, []);
 
   const statusRefreshInFlight = useRef(false);
+  const activeTabRef = useRef(activeTab);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   const handleShareMatch = useCallback(async () => {
     const shareUrl = window.location.href;
     const shareTitle = `${match?.teams.home.name ?? "Home"} vs ${match?.teams.away.name ?? "Away"}`;
@@ -555,12 +572,17 @@ export default function MatchCentreClient({
 
       window.setTimeout(() => setShareFeedback(""), 3000);
     }
-  }, [match?.teams.home.name, match?.teams.away.name]);
+  }, [match]);
 
   const loadedMatchData = useRef(new Set<string>());
+  const matchRequestController = useRef<AbortController | null>(null);
 
   const loadMatch = useCallback(
     async (isRefresh = false) => {
+      matchRequestController.current?.abort();
+      const controller = new AbortController();
+      matchRequestController.current = controller;
+
       try {
         if (isRefresh) {
           setRefreshing(true);
@@ -572,7 +594,7 @@ export default function MatchCentreClient({
 
         const response = await fetch(
           `/api/football/match?id=${encodeURIComponent(id)}`,
-          { cache: "no-store" }
+          { cache: "no-store", signal: controller.signal }
         );
 
         const data: MatchResponse = await response.json();
@@ -581,25 +603,50 @@ export default function MatchCentreClient({
           throw new Error(getErrorMessage(data.error));
         }
 
+        if (controller.signal.aborted) return;
         setMatch(data.match);
         setDiagnostics(data.diagnostics);
         setStatusRefreshError("");
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError(
           err instanceof Error
             ? err.message
             : "Something went wrong while loading this match."
         );
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (matchRequestController.current === controller) {
+          matchRequestController.current = null;
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [id]
   );
 
   useEffect(() => {
+    loadedMatchData.current.clear();
+    setMatch(null);
+    setDiagnostics(undefined);
+    setStandings([]);
+    setTableError("");
+    setStandingsLoading(false);
+    setMatchNews([]);
+    setNewsLoading(false);
+    setNewsError("");
+    setTeamForm(null);
+    setTeamFormLoading(false);
+    setTeamFormError("");
+    setHeadToHead([]);
+    setHeadToHeadLoading(false);
+    setHeadToHeadError("");
+    setStatusRefreshError("");
     void loadMatch();
+
+    return () => {
+      matchRequestController.current?.abort();
+    };
   }, [loadMatch]);
 
   // Refresh the score and event timeline together, with a conservative
@@ -646,6 +693,13 @@ export default function MatchCentreClient({
 
         if (cancelled) return;
 
+        const refreshedStatus = data.status.short.toUpperCase();
+        const refreshedScore = {
+          home: data.goals.home,
+          away: data.goals.away,
+        };
+        const finishedStatuses = ["FT", "AET", "PEN"];
+
         setMatch((currentMatch) => {
           if (!currentMatch) return currentMatch;
 
@@ -656,11 +710,57 @@ export default function MatchCentreClient({
               status: data.status!,
             },
             goals: data.goals!,
-            events: Array.isArray(data.events)
-              ? data.events
-              : currentMatch.events,
+            score: {
+              ...currentMatch.score,
+              ...(refreshedStatus === "HT"
+                ? { halftime: refreshedScore }
+                : {}),
+              ...(finishedStatuses.includes(refreshedStatus)
+                ? { fulltime: refreshedScore }
+                : {}),
+            },
           };
         });
+
+        // Events are only refreshed while the Overview tab is selected.
+        // The score/status refresh remains successful if event retrieval fails.
+        if (
+          activeTabRef.current === "overview" &&
+          EVENT_ELIGIBLE_STATUSES.includes(refreshedStatus)
+        ) {
+          try {
+            const eventsResponse = await fetch(
+              `/api/football/match-events?id=${encodeURIComponent(id)}`,
+              { cache: "no-store" }
+            );
+            const eventsData: {
+              success?: boolean;
+              events?: MatchEvent[];
+            } = await eventsResponse.json();
+
+            if (
+              eventsResponse.ok &&
+              eventsData.success &&
+              Array.isArray(eventsData.events)
+            ) {
+              setMatch((currentMatch) => {
+                if (
+                  !currentMatch ||
+                  String(currentMatch.fixture.id) !== id
+                ) {
+                  return currentMatch;
+                }
+
+                return {
+                  ...currentMatch,
+                  events: eventsData.events!,
+                };
+              });
+            }
+          } catch {
+            // Keep the existing event timeline if event refresh fails.
+          }
+        }
 
         setStatusRefreshError("");
       } catch (refreshError) {
@@ -674,14 +774,22 @@ export default function MatchCentreClient({
       }
     };
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshMatchStatus();
+      }
+    };
+
     const interval = window.setInterval(
-      refreshMatchStatus,
+      refreshWhenVisible,
       intervalMs
     );
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [id, match?.fixture.status.short]);
 
@@ -695,6 +803,7 @@ export default function MatchCentreClient({
 
     let cancelled = false;
     setTeamFormLoading(true);
+    setTeamFormError("");
 
     fetch(`/api/football/team-form?home=${homeId}&away=${awayId}`, {
       cache: "no-store",
@@ -710,7 +819,10 @@ export default function MatchCentreClient({
         }
       })
       .catch(() => {
-        if (!cancelled) setTeamForm(null);
+        if (!cancelled) {
+          setTeamForm(null);
+          setTeamFormError("Recent form could not be loaded. Please try again.");
+        }
       })
       .finally(() => {
         if (!cancelled) setTeamFormLoading(false);
@@ -731,6 +843,7 @@ export default function MatchCentreClient({
 
     let cancelled = false;
     setHeadToHeadLoading(true);
+    setHeadToHeadError("");
 
     fetch(`/api/football/head-to-head?home=${homeId}&away=${awayId}`, {
       cache: "no-store",
@@ -746,7 +859,10 @@ export default function MatchCentreClient({
         }
       })
       .catch(() => {
-        if (!cancelled) setHeadToHead([]);
+        if (!cancelled) {
+          setHeadToHead([]);
+          setHeadToHeadError("Previous meetings could not be loaded. Please try again.");
+        }
       })
       .finally(() => {
         if (!cancelled) setHeadToHeadLoading(false);
@@ -774,6 +890,7 @@ export default function MatchCentreClient({
 
     let cancelled = false;
     setTableError("");
+    setStandingsLoading(true);
 
     fetch(`/api/football/standings?league=${leagueId}&season=${season}`, {
       cache: "no-store",
@@ -793,6 +910,9 @@ export default function MatchCentreClient({
         if (!cancelled) {
           setTableError("Unable to load data right now. Please try again later.");
         }
+      })
+      .finally(() => {
+        if (!cancelled) setStandingsLoading(false);
       });
 
     return () => {
@@ -811,6 +931,7 @@ export default function MatchCentreClient({
 
     let cancelled = false;
     setNewsLoading(true);
+    setNewsError("");
 
     fetch("/api/football/news", { cache: "no-store" })
       .then(async (response) => {
@@ -837,7 +958,10 @@ export default function MatchCentreClient({
         }
       })
       .catch(() => {
-        if (!cancelled) setMatchNews([]);
+        if (!cancelled) {
+          setMatchNews([]);
+          setNewsError("Related football news could not be loaded. Please try again.");
+        }
       })
       .finally(() => {
         if (!cancelled) setNewsLoading(false);
@@ -884,7 +1008,7 @@ export default function MatchCentreClient({
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#070f1b] text-white">
+      <main className="match-centre-shell min-h-screen bg-[#070f1b] text-white">
         <Header />
         <div className="flex min-h-[65vh] items-center justify-center px-5">
           <div className="text-center">
@@ -907,7 +1031,7 @@ export default function MatchCentreClient({
 
   if (error && !match) {
     return (
-      <main className="min-h-screen bg-[#070f1b] text-white">
+      <main className="match-centre-shell min-h-screen bg-[#070f1b] text-white">
         <Header />
         <div className="mx-auto max-w-3xl px-5 py-24 text-center">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-2xl">
@@ -965,10 +1089,10 @@ export default function MatchCentreClient({
   const isDisrupted = ["SUSP", "INT", "INTERRUPTED"].includes(statusCode);
 
   return (
-    <main className="min-h-screen bg-[#070f1b] text-white">
+    <main className="match-centre-shell min-h-screen bg-[#070f1b] text-white">
       <Header />
 
-      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+      <div className="match-centre-content mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
         {/* Breadcrumb */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -1203,9 +1327,9 @@ export default function MatchCentreClient({
             )}
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            {([{name:homeTeam, form:teamForm?.home}, {name:awayTeam, form:teamForm?.away}] as const).map((team) => (
-              <div key={team.name} className="rounded-xl bg-[#0b1624] p-4">
-                <p className="mb-3 text-sm font-bold text-white">{team.name}</p>
+            {([{id:match.teams.home.id, name:homeTeam, form:teamForm?.home}, {id:match.teams.away.id, name:awayTeam, form:teamForm?.away}] as const).map((team) => (
+              <div key={team.id} className="rounded-xl bg-[#0b1624] p-4">
+                <p className="mb-3 text-sm font-bold text-white"><Link href={`/team/${team.id}`} className="transition-colors hover:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">{team.name}</Link></p>
                 <div className="flex min-h-8 flex-wrap items-center gap-2">
                   {teamFormLoading ? (
                     <span className="text-xs text-slate-500">Loading recent results...</span>
@@ -1221,6 +1345,8 @@ export default function MatchCentreClient({
                         {game.result}
                       </Link>
                     ))
+                  ) : teamFormError ? (
+                    <span className="text-xs text-amber-300">{teamFormError}</span>
                   ) : (
                     <span className="text-xs text-slate-500">Recent results unavailable</span>
                   )}
@@ -1254,6 +1380,8 @@ export default function MatchCentreClient({
             events={events}
             homeTeam={homeTeam}
             awayTeam={awayTeam}
+            homeTeamId={match.teams.home.id}
+            awayTeamId={match.teams.away.id}
             homeGoals={match.goals.home}
             awayGoals={match.goals.away}
             status={match.fixture.status.short}
@@ -1321,6 +1449,7 @@ export default function MatchCentreClient({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
+                aria-pressed={activeTab === tab.id}
                 className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold transition sm:px-5 sm:text-sm ${
                   activeTab === tab.id
                     ? "bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10"
@@ -1347,6 +1476,8 @@ export default function MatchCentreClient({
               events={events}
               homeTeam={homeTeam}
               awayTeam={awayTeam}
+              homeTeamId={match.teams.home.id}
+              awayTeamId={match.teams.away.id}
             />
           </section>
         )}
@@ -1370,6 +1501,8 @@ export default function MatchCentreClient({
               </div>
               {headToHeadLoading ? (
                 <p className="py-5 text-center text-sm text-slate-400">Loading previous meetings...</p>
+              ) : headToHeadError ? (
+                <p className="py-5 text-center text-sm text-amber-300">{headToHeadError}</p>
               ) : headToHead.length === 0 ? (
                 <p className="py-5 text-center text-sm text-slate-400">No previous completed meetings were returned for these teams.</p>
               ) : (
@@ -1519,7 +1652,13 @@ export default function MatchCentreClient({
                           )}
                           <div className="min-w-0">
                             <h3 className="truncate font-black text-white">
-                              {lineup.team.name}
+                              <Link
+                                href={`/team/${lineup.team.id}`}
+                                aria-label={`View ${lineup.team.name} team profile`}
+                                className="transition-colors hover:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                              >
+                                {lineup.team.name}
+                              </Link>
                             </h3>
                             <p className="mt-1 text-xs text-slate-500">
                               {startingPlayers.length === 11
@@ -1642,7 +1781,15 @@ export default function MatchCentreClient({
                           </span>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-white">{absence.player.name}</p>
+                          <p className="truncate text-sm font-bold text-white">
+                            <Link
+                              href={`/player/${absence.player.id}`}
+                              title={`View ${absence.player.name}'s player profile`}
+                              className="transition-colors hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                            >
+                              {absence.player.name}
+                            </Link>
+                          </p>
                           <p className="truncate text-xs text-slate-400">{absence.team.name} · {reason}</p>
                         </div>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${isSuspension ? "bg-amber-500/10 text-amber-300" : "bg-red-500/10 text-red-300"}`}>
@@ -1679,7 +1826,7 @@ export default function MatchCentreClient({
         {activeTab === "table" && (
           <section className="rounded-2xl border border-white/[0.07] bg-[#101d2d] p-4 sm:p-6">
             <SectionHeading eyebrow={match.league.name} title="Competition Table" description="Official standings returned by the football data provider." />
-            {tableError ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-slate-400">{tableError}</p> : standings.length === 0 ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-slate-400">Standings are not available for this competition or season.</p> : (
+            {tableError ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-slate-400">{tableError}</p> : standingsLoading ? <p className="rounded-xl bg-[#0c1725] p-5 text-center text-sm text-slate-400" role="status">Loading competition standings...</p> : standings.length === 0 ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-slate-400">Standings are not available for this competition or season.</p> : (
               <>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[820px] text-left text-xs">
@@ -1718,7 +1865,7 @@ export default function MatchCentreClient({
         {activeTab === "news" && (
           <section className="rounded-2xl border border-white/[0.07] bg-[#101d2d] p-4 sm:p-6">
             <SectionHeading eyebrow="Team coverage" title="Related Football News" description={`Headlines mentioning ${homeTeam}, ${awayTeam} or ${match.league.name}.`} />
-            {newsLoading ? <p className="p-8 text-center text-sm text-slate-400">Loading related news...</p> : matchNews.length === 0 ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-slate-400">No related headlines are currently available. Unrelated football stories are hidden.</p> : <div className="grid gap-3 md:grid-cols-2">{matchNews.map((article) => <a key={article.id} href={article.link} target="_blank" rel="noreferrer" className="rounded-xl border border-white/[0.06] bg-[#0c1725] p-4 transition hover:border-emerald-500/30"><p className="text-sm font-bold text-white">{article.title}</p>{article.summary && <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">{article.summary}</p>}<p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{article.source} · {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString("en-NG") : "Latest"}</p></a>)}</div>}
+            {newsLoading ? <p className="p-8 text-center text-sm text-slate-400">Loading related news...</p> : newsError ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-amber-300">{newsError}</p> : matchNews.length === 0 ? <p className="rounded-xl bg-[#0c1725] p-5 text-sm text-slate-400">No related headlines are currently available. Unrelated football stories are hidden.</p> : <div className="grid gap-3 md:grid-cols-2">{matchNews.map((article) => <a key={article.id} href={article.link} target="_blank" rel="noreferrer" className="rounded-xl border border-white/[0.06] bg-[#0c1725] p-4 transition hover:border-emerald-500/30"><p className="text-sm font-bold text-white">{article.title}</p>{article.summary && <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">{article.summary}</p>}<p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{article.source} · {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString("en-NG") : "Latest"}</p></a>)}</div>}
             <div className="mt-6 border-t border-white/[0.06] pt-5"><h3 className="mb-3 text-sm font-bold text-white">Video highlights</h3><YouTubeHighlights kind="all" homeTeam={homeTeam} awayTeam={awayTeam} league={match.league.name} limit={4} /></div>
           </section>
         )}

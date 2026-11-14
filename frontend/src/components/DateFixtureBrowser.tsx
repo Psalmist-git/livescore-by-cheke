@@ -92,11 +92,11 @@ export default function DateFixtureBrowser() {
         <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="text-xl font-black sm:text-2xl">Scores & Fixtures</h2>
-            <p className="mt-1 text-xs text-slate-400">Recent results, today's action and upcoming matches.</p>
+            <p className="mt-1 text-xs text-slate-400">Recent results, today&apos;s action and upcoming matches.</p>
           </div>
           <span className="text-xs text-slate-500">Nigeria time · GMT+1</span>
         </div>
-        <div className="mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
+        <div className="date-strip mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
           {dates.map((date) => {
             const label = dayLabel(date);
             const active = selected === date;
@@ -165,7 +165,7 @@ export default function DateFixtureBrowser() {
                       Match Centre →
                     </Link>
                   </div>
-                </article>         </Link>
+                </article>
               );
             })}
           </section>

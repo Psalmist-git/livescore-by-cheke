@@ -1,20 +1,7 @@
 import { connection, NextRequest, NextResponse } from "next/server";
+import { fetchFootballApi, hasFootballApiErrors } from "@/lib/football-api";
 
 const API_BASE_URL = "https://v3.football.api-sports.io";
-
-function hasApiErrors(errors: unknown): boolean {
-  if (!errors) return false;
-
-  if (Array.isArray(errors)) {
-    return errors.length > 0;
-  }
-
-  if (typeof errors === "object") {
-    return Object.keys(errors).length > 0;
-  }
-
-  return Boolean(errors);
-}
 
 export async function GET(request: NextRequest) {
   await connection();
@@ -41,23 +28,22 @@ export async function GET(request: NextRequest) {
     const fixtureUrl = new URL(`${API_BASE_URL}/fixtures`);
     fixtureUrl.searchParams.set("id", matchId);
 
-    const response = await fetch(fixtureUrl.toString(), {
+    const response = await fetchFootballApi(fixtureUrl.toString(), {
       method: "GET",
       headers: {
         "x-apisports-key": apiKey,
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(10000),
     });
 
     const data = await response.json();
 
-    if (!response.ok || hasApiErrors(data.errors)) {
+    if (!response.ok || hasFootballApiErrors(data.errors)) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            data.errors ||
-            "Unable to retrieve the latest match status.",
+          error: "Unable to retrieve the latest match status.",
         },
         { status: response.ok ? 502 : response.status }
       );
@@ -72,38 +58,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Only request event data once the match is in progress or finished.
-    // Scheduled fixtures still refresh their status without extra event calls.
-    let events: any[] | null = null;
-    const eventEligibleStatuses = ["1H", "HT", "2H", "ET", "BT", "P", "LIVE", "INT", "SUSP", "INTERRUPTED", "FT", "AET", "PEN"];
-    if (eventEligibleStatuses.includes(match.fixture.status.short)) {
-      try {
-        const eventsUrl = new URL(`${API_BASE_URL}/fixtures/events`);
-        eventsUrl.searchParams.set("fixture", matchId);
-        const eventsResponse = await fetch(eventsUrl.toString(), {
-          method: "GET",
-          headers: { "x-apisports-key": apiKey },
-          cache: "no-store",
-        });
-        const eventsData = await eventsResponse.json();
-        if (
-          eventsResponse.ok &&
-          !hasApiErrors(eventsData.errors) &&
-          Array.isArray(eventsData.response)
-        ) {
-          events = eventsData.response;
-        }
-      } catch {
-        // Keep the score/status response usable if event data is unavailable.
-      }
-    }
+    // Keep this endpoint focused on score and status.
+    // Match events are refreshed independently when the Overview tab is active.
 
     return NextResponse.json(
       {
         success: true,
         status: match.fixture.status,
         goals: match.goals,
-        events,
       },
       {
         headers: {

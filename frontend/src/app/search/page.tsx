@@ -414,7 +414,13 @@ export default function SearchPage() {
 
                         <div className="min-w-0">
                           <h3 className="break-words font-bold transition group-hover:text-green-400">
-                            {item.team.name}
+                            <Link
+                              href={`/team/${item.team.id}`}
+                              aria-label={`View ${item.team.name} team profile`}
+                              className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                            >
+                              {item.team.name}
+                            </Link>
                           </h3>
 
                           <p className="mt-1 text-sm text-slate-400">
@@ -560,9 +566,12 @@ export default function SearchPage() {
                     {matchedTeam && (
                       <p className="mt-2 text-sm text-slate-400">
                         Showing recent fixtures for{" "}
-                        <span className="font-semibold text-green-400">
+                        <Link
+                          href={`/team/${matchedTeam.team.id}`}
+                          className="font-semibold text-green-400 hover:text-green-300"
+                        >
                           {matchedTeam.team.name}
-                        </span>
+                        </Link>
                       </p>
                     )}
                   </div>
@@ -582,10 +591,9 @@ export default function SearchPage() {
                       const live = isLiveStatus(match.fixture.status.short);
 
                       return (
-                        <Link
+                        <article
                           key={match.fixture.id}
-                          href={`/match/${match.fixture.id}`}
-                          className="group block rounded-2xl border border-slate-800 bg-slate-900 p-4 transition hover:border-green-500/60 sm:p-6"
+                          className="group rounded-2xl border border-slate-800 bg-slate-900 p-4 transition hover:border-green-500/60 sm:p-6"
                         >
                           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                             <div>
@@ -620,9 +628,13 @@ export default function SearchPage() {
                                 className="h-9 w-9 shrink-0 object-contain sm:h-12 sm:w-12"
                               />
 
-                              <span className="break-words text-xs font-bold sm:text-base">
+                              <Link
+                                href={`/team/${match.teams.home.id}`}
+                                aria-label={`View ${match.teams.home.name} team profile`}
+                                className="break-words text-xs font-bold transition hover:text-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 sm:text-base"
+                              >
                                 {match.teams.home.name}
-                              </span>
+                              </Link>
                             </div>
 
                             <div className="min-w-[76px] text-center sm:min-w-[100px]">
@@ -644,9 +656,13 @@ export default function SearchPage() {
                             </div>
 
                             <div className="flex min-w-0 items-center justify-end gap-2 text-right sm:gap-3">
-                              <span className="break-words text-xs font-bold sm:text-base">
+                              <Link
+                                href={`/team/${match.teams.away.id}`}
+                                aria-label={`View ${match.teams.away.name} team profile`}
+                                className="break-words text-xs font-bold transition hover:text-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 sm:text-base"
+                              >
                                 {match.teams.away.name}
-                              </span>
+                              </Link>
 
                               <img
                                 src={match.teams.away.logo}
@@ -657,11 +673,15 @@ export default function SearchPage() {
                           </div>
 
                           <div className="mt-5 flex justify-end border-t border-slate-800 pt-4">
-                            <span className="text-xs font-bold text-green-400 transition group-hover:translate-x-1">
+                            <Link
+                              href={`/match/${match.fixture.id}`}
+                              aria-label={`Open ${match.teams.home.name} vs ${match.teams.away.name} match centre`}
+                              className="text-xs font-bold text-green-400 transition hover:translate-x-1 hover:text-green-300"
+                            >
                               Open Match Centre →
-                            </span>
+                            </Link>
                           </div>
-                        </Link>
+                        </article>
                       );
                     })}
                   </div>

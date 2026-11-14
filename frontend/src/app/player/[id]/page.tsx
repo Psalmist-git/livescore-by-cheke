@@ -143,7 +143,7 @@ function PlayerProfileContent() {
               {stats.length === 0 ? <p className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-400">No season statistics are available for this player yet.</p> : <div className="space-y-4">{stats.map((item, index) => <article key={`${item.team?.id ?? "team"}-${item.league?.id ?? index}`} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
                 <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 pb-4">
                   {item.team?.logo && <img src={item.team.logo} alt="" className="h-9 w-9 object-contain" />}
-                  <div className="min-w-0 flex-1"><h3 className="font-bold">{item.team?.name || "Team unavailable"}</h3><p className="mt-1 text-xs text-slate-400">{item.league?.name || "Competition unavailable"}{item.league?.country ? ` · ${item.league.country}` : ""}</p></div>
+                  <div className="min-w-0 flex-1"><h3 className="font-bold">{item.team?.id ? <Link href={`/team/${item.team.id}`} className="transition-colors hover:text-emerald-400 focus-visible:text-emerald-400">{item.team.name}</Link> : item.team?.name || "Team unavailable"}</h3><p className="mt-1 text-xs text-slate-400">{item.league?.name || "Competition unavailable"}{item.league?.country ? ` · ${item.league.country}` : ""}</p></div>
                   {item.games?.rating && <span className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-black text-emerald-300">Rating {Number(item.games.rating).toFixed(2)}</span>}
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">

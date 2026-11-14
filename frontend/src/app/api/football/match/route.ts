@@ -1,20 +1,26 @@
 import { connection, NextRequest, NextResponse } from "next/server";
+import { fetchFootballApi, hasFootballApiErrors } from "@/lib/football-api";
 
 const API_BASE_URL = "https://v3.football.api-sports.io";
 
+type RecordValue = Record<string, unknown>;
+
 type EndpointResult = {
-  data: any[];
+  data: unknown[];
   diagnostic: {
     endpoint: string;
     httpStatus: number | null;
     success: boolean;
     results: number;
-    errors: any;
+    errors: unknown;
     message: string;
   };
 };
 
-// Fetch optional match information and retain diagnostic details.
+function isRecord(value: unknown): value is RecordValue {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 async function fetchOptionalMatchData(
   endpoint: string,
   matchId: string,
@@ -24,210 +30,160 @@ async function fetchOptionalMatchData(
     const url = new URL(`${API_BASE_URL}/${endpoint}`);
     url.searchParams.set("fixture", matchId);
 
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        "x-apisports-key": apiKey,
-      },
-      cache: "no-store",
+    const revalidateSeconds =
+      endpoint === "fixtures/events" ? 60 :
+      endpoint === "fixtures/lineups" ? 3600 :
+      endpoint === "injuries" ? 600 : 300;
+
+    const response = await fetchFootballApi(url, {
+      headers: { "x-apisports-key": apiKey },
+      next: { revalidate: revalidateSeconds },
     });
 
-    let data: any;
-
+    let payload: unknown;
     try {
-      data = await response.json();
+      payload = await response.json();
     } catch {
       return {
         data: [],
         diagnostic: {
-          endpoint,
-          httpStatus: response.status,
-          success: false,
-          results: 0,
-          errors: null,
-          message: "The API returned an invalid JSON response.",
+          endpoint, httpStatus: response.status, success: false, results: 0,
+          errors: null, message: "The API returned an invalid JSON response.",
         },
       };
     }
 
-    const apiErrors = data.errors ?? null;
-
-    const hasApiErrors =
-      apiErrors !== null &&
-      (Array.isArray(apiErrors)
-        ? apiErrors.length > 0
-        : typeof apiErrors === "object"
-          ? Object.keys(apiErrors).length > 0
-          : Boolean(apiErrors));
-
-    const results = Array.isArray(data.response)
-      ? data.response
-      : [];
-
-    if (!response.ok || hasApiErrors) {
+    const apiErrors = isRecord(payload) ? payload.errors ?? null : null;
+    const responseData = isRecord(payload) ? payload.response : null;
+    if (!response.ok || hasFootballApiErrors(apiErrors) || !Array.isArray(responseData)) {
       return {
         data: [],
         diagnostic: {
-          endpoint,
-          httpStatus: response.status,
-          success: false,
-          results: 0,
-          errors: apiErrors,
-          message: "The API request failed or returned an error.",
+          endpoint, httpStatus: response.status, success: false, results: 0,
+          errors: apiErrors, message: "The API request failed or returned unexpected data.",
         },
       };
     }
 
     return {
-      data: results,
+      data: responseData,
       diagnostic: {
-        endpoint,
-        httpStatus: response.status,
-        success: true,
-        results: results.length,
-        errors: null,
-        message:
-          results.length > 0
-            ? "Data retrieved successfully."
-            : "The API request succeeded but returned no data.",
+        endpoint, httpStatus: response.status, success: true,
+        results: responseData.length, errors: null,
+        message: responseData.length > 0
+          ? "Data retrieved successfully."
+          : "The API request succeeded but returned no data.",
       },
     };
   } catch (error) {
     return {
       data: [],
       diagnostic: {
-        endpoint,
-        httpStatus: null,
-        success: false,
-        results: 0,
-        errors: null,
-        message:
-          error instanceof Error
-            ? error.message
-            : "An unexpected network error occurred.",
+        endpoint, httpStatus: null, success: false, results: 0, errors: null,
+        message: error instanceof Error ? error.message : "An unexpected network error occurred.",
       },
     };
   }
+}
+
+function skippedOptionalMatchData(endpoint: string): EndpointResult {
+  return {
+    data: [],
+    diagnostic: {
+      endpoint, httpStatus: null, success: true, results: 0, errors: null,
+      message: "Skipped because the fixture has not started.",
+    },
+  };
 }
 
 export async function GET(request: NextRequest) {
   await connection();
   try {
     const apiKey = process.env.API_FOOTBALL_KEY;
-
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Football API key is missing." },
-        { status: 500 }
+        { success: false, error: "Football API is not configured." },
+        { status: 503 }
       );
     }
 
-    const { searchParams } = new URL(request.url);
-    const matchId = searchParams.get("id");
-
-    if (!matchId || !/^\d+$/.test(matchId)) {
+    const matchId = request.nextUrl.searchParams.get("id");
+    if (!matchId || !/^\d+$/.test(matchId) || Number(matchId) <= 0) {
       return NextResponse.json(
-        { error: "A valid match ID is required." },
+        { success: false, error: "A valid match ID is required." },
         { status: 400 }
       );
     }
 
-    // 1. Retrieve the main fixture.
     const fixtureUrl = new URL(`${API_BASE_URL}/fixtures`);
     fixtureUrl.searchParams.set("id", matchId);
 
-    const fixtureResponse = await fetch(fixtureUrl.toString(), {
-      method: "GET",
-      headers: {
-        "x-apisports-key": apiKey,
-      },
-      cache: "no-store",
+    const fixtureResponse = await fetchFootballApi(fixtureUrl, {
+      headers: { "x-apisports-key": apiKey },
+      next: { revalidate: 30 },
     });
 
-    const fixtureData = await fixtureResponse.json();
-
-    if (
-      !fixtureResponse.ok ||
-      (fixtureData.errors &&
-        Object.keys(fixtureData.errors).length > 0)
-    ) {
+    let fixturePayload: unknown;
+    try {
+      fixturePayload = await fixtureResponse.json();
+    } catch {
       return NextResponse.json(
-        {
-          error:
-            fixtureData.errors ||
-            "Unable to retrieve match information.",
-        },
-        {
-          status: fixtureResponse.ok
-            ? 502
-            : fixtureResponse.status,
-        }
+        { success: false, error: "The football data provider returned an invalid response." },
+        { status: 502 }
       );
     }
 
-    const match = fixtureData.response?.[0];
+    const fixtureErrors = isRecord(fixturePayload) ? fixturePayload.errors : null;
+    const fixtureList = isRecord(fixturePayload) ? fixturePayload.response : null;
 
+    if (!fixtureResponse.ok || hasFootballApiErrors(fixtureErrors)) {
+      return NextResponse.json(
+        { success: false, error: "Unable to retrieve match information." },
+        { status: fixtureResponse.ok ? 502 : fixtureResponse.status }
+      );
+    }
+
+    if (!Array.isArray(fixtureList)) {
+      return NextResponse.json(
+        { success: false, error: "The football data provider returned unexpected match data." },
+        { status: 502 }
+      );
+    }
+
+    const match = fixtureList[0];
     if (!match) {
       return NextResponse.json(
-        { error: "Match information was not found." },
+        { success: false, error: "Match information was not found." },
         { status: 404 }
       );
     }
 
-    // 2. Retrieve optional match information independently.
-    // A failure in one optional endpoint will not prevent
-    // the other match information from being returned.
-    const [
-      eventsResult,
-      lineupsResult,
-      statisticsResult,
-      playersResult,
-      injuriesResult,
-    ] = await Promise.all([
-      fetchOptionalMatchData(
-        "fixtures/events",
-        matchId,
-        apiKey
-      ),
+    const fixture = isRecord(match) && isRecord(match.fixture) ? match.fixture : null;
+    const matchStatus = fixture && isRecord(fixture.status) ? fixture.status.short : null;
+    const isScheduled = ["NS", "TBD"].includes(String(matchStatus || "").toUpperCase());
 
-      fetchOptionalMatchData(
-        "fixtures/lineups",
-        matchId,
-        apiKey
-      ),
+    const [eventsResult, lineupsResult, statisticsResult, playersResult, injuriesResult] =
+      await Promise.all([
+        isScheduled ? Promise.resolve(skippedOptionalMatchData("fixtures/events")) :
+          fetchOptionalMatchData("fixtures/events", matchId, apiKey),
+        fetchOptionalMatchData("fixtures/lineups", matchId, apiKey),
+        isScheduled ? Promise.resolve(skippedOptionalMatchData("fixtures/statistics")) :
+          fetchOptionalMatchData("fixtures/statistics", matchId, apiKey),
+        isScheduled ? Promise.resolve(skippedOptionalMatchData("fixtures/players")) :
+          fetchOptionalMatchData("fixtures/players", matchId, apiKey),
+        fetchOptionalMatchData("injuries", matchId, apiKey),
+      ]);
 
-      fetchOptionalMatchData(
-        "fixtures/statistics",
-        matchId,
-        apiKey
-      ),
-
-      fetchOptionalMatchData(
-        "fixtures/players",
-        matchId,
-        apiKey
-      ),
-
-      fetchOptionalMatchData(
-        "injuries",
-        matchId,
-        apiKey
-      ),
-    ]);
-
-    // 3. Return match data and diagnostics.
     return NextResponse.json({
       success: true,
-
       match: {
-        ...match,
+        ...(isRecord(match) ? match : {}),
         events: eventsResult.data,
         lineups: lineupsResult.data,
         statistics: statisticsResult.data,
         players: playersResult.data,
         injuries: injuriesResult.data,
       },
-
       diagnostics: {
         events: eventsResult.diagnostic,
         lineups: lineupsResult.diagnostic,
@@ -238,13 +194,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Match Centre API error:", error);
-
     return NextResponse.json(
-      {
-        error:
-          "Something went wrong while retrieving match information.",
-      },
-      { status: 500 }
+      { success: false, error: "Something went wrong while retrieving match information." },
+      { status: 502 }
     );
   }
 }

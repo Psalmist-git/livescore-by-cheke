@@ -140,9 +140,9 @@ export default function TeamComparePage() {
         {comparison ? (
           <section className="mt-10 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-slate-800 p-4 sm:p-6">
-              <div className="text-center">{comparison.home.team.logo && <img src={comparison.home.team.logo} alt="" className="mx-auto mb-2 h-12 w-12 object-contain" />}<p className="text-sm font-black sm:text-lg">{comparison.home.team.name}</p><FormPills form={comparison.home.form} /></div>
+              <div className="text-center">{comparison.home.team.logo && <img src={comparison.home.team.logo} alt="" className="mx-auto mb-2 h-12 w-12 object-contain" />}<Link href={`/team/${comparison.home.team.id}`} aria-label={`View ${comparison.home.team.name} team profile`} className="text-sm font-black transition hover:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:text-lg">{comparison.home.team.name}</Link><FormPills form={comparison.home.form} /></div>
               <span className="rounded-full bg-slate-800 px-3 py-2 text-xs font-black text-emerald-400">VS</span>
-              <div className="text-center">{comparison.away.team.logo && <img src={comparison.away.team.logo} alt="" className="mx-auto mb-2 h-12 w-12 object-contain" />}<p className="text-sm font-black sm:text-lg">{comparison.away.team.name}</p><FormPills form={comparison.away.form} /></div>
+              <div className="text-center">{comparison.away.team.logo && <img src={comparison.away.team.logo} alt="" className="mx-auto mb-2 h-12 w-12 object-contain" />}<Link href={`/team/${comparison.away.team.id}`} aria-label={`View ${comparison.away.team.name} team profile`} className="text-sm font-black transition hover:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:text-lg">{comparison.away.team.name}</Link><FormPills form={comparison.away.form} /></div>
             </div>
             <div className="divide-y divide-slate-800">{metrics.map((metric) => {
               const a = comparison.home[metric.key] as number, b = comparison.away[metric.key] as number;
@@ -185,14 +185,14 @@ export default function TeamComparePage() {
                       <div key={match.id} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3 sm:p-4">
                         <div className="flex min-w-0 items-center gap-2">
                           {match.homeLogo && <img src={match.homeLogo} alt="" className="h-7 w-7 shrink-0 object-contain" />}
-                          <span className={`truncate text-xs font-bold sm:text-sm ${homeWon ? "text-emerald-300" : "text-slate-200"}`}>{match.home}</span>
+                          <Link href={`/team/${match.homeId}`} aria-label={`View ${match.home} team profile`} className={`truncate text-xs font-bold transition hover:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:text-sm ${homeWon ? "text-emerald-300" : "text-slate-200"}`}>{match.home}</Link>
                         </div>
                         <div className="text-center">
                           <p className="text-lg font-black tabular-nums">{match.homeGoals ?? "–"} <span className="text-slate-500">:</span> {match.awayGoals ?? "–"}</p>
                           <p className="mt-1 text-[10px] text-slate-500">{new Date(match.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
                         </div>
                         <div className="flex min-w-0 items-center justify-end gap-2">
-                          <span className={`truncate text-right text-xs font-bold sm:text-sm ${awayWon ? "text-emerald-300" : "text-slate-200"}`}>{match.away}</span>
+                          <Link href={`/team/${match.awayId}`} aria-label={`View ${match.away} team profile`} className={`truncate text-right text-xs font-bold transition hover:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:text-sm ${awayWon ? "text-emerald-300" : "text-slate-200"}`}>{match.away}</Link>
                           {match.awayLogo && <img src={match.awayLogo} alt="" className="h-7 w-7 shrink-0 object-contain" />}
                         </div>
                         <p className="col-span-3 -mt-1 text-center text-[10px] text-slate-500">{match.competition}</p>
@@ -207,7 +207,7 @@ export default function TeamComparePage() {
                 </div>
               )}
             </section>
-            <p className="border-t border-slate-800 px-5 py-4 text-xs leading-5 text-slate-500">Form is ordered newest first by date. A dash is used only where data is unavailable. This comparison covers each team's latest ten completed fixtures, which may span different competitions and seasons.</p>
+            <p className="border-t border-slate-800 px-5 py-4 text-xs leading-5 text-slate-500">Form is ordered newest first by date. A dash is used only where data is unavailable. This comparison covers each team&apos;s latest ten completed fixtures, which may span different competitions and seasons.</p>
           </section>
         ) : !loading && <div className="mt-10 rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 px-6 py-12 text-center"><p className="text-lg font-bold">Choose two teams to get started</p><p className="mt-2 text-sm text-slate-400">Select clubs or national teams above, then compare their recent results.</p></div>}
       </div>

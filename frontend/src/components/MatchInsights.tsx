@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 interface MatchInsightEvent {
   time: {
     elapsed: number;
@@ -14,6 +16,8 @@ interface MatchInsightsProps {
   events: MatchInsightEvent[];
   homeTeam: string;
   awayTeam: string;
+  homeTeamId?: number;
+  awayTeamId?: number;
   homeGoals: number | null;
   awayGoals: number | null;
   status: string;
@@ -24,6 +28,8 @@ export default function MatchInsights({
   events,
   homeTeam,
   awayTeam,
+  homeTeamId,
+  awayTeamId,
   homeGoals,
   awayGoals,
   status,
@@ -145,6 +151,7 @@ export default function MatchInsights({
   const teams = [
     {
       name: homeTeam,
+      id: homeTeamId,
       cards: homeCards,
       substitutions: homeSubstitutions,
       color: "text-emerald-300",
@@ -153,6 +160,7 @@ export default function MatchInsights({
     },
     {
       name: awayTeam,
+      id: awayTeamId,
       cards: awayCards,
       substitutions: awaySubstitutions,
       color: "text-sky-300",
@@ -258,9 +266,19 @@ export default function MatchInsights({
                 <div className="mb-5 flex items-center gap-3">
                   <span className={`h-2.5 w-2.5 rounded-full ${team.dot}`} />
 
-                  <h4 className={`min-w-0 truncate text-sm font-bold ${team.color}`}>
-                    {team.name}
-                  </h4>
+                  {team.id !== undefined ? (
+                    <Link
+                      href={`/team/${team.id}`}
+                      className={`min-w-0 truncate text-sm font-bold transition hover:underline ${team.color}`}
+                      title={`View ${team.name}'s team profile`}
+                    >
+                      {team.name}
+                    </Link>
+                  ) : (
+                    <h4 className={`min-w-0 truncate text-sm font-bold ${team.color}`}>
+                      {team.name}
+                    </h4>
+                  )}
 
                   <span className={`ml-auto shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${team.badge} ${team.color}`}>
                     {team.substitutions} subs

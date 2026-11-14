@@ -1,50 +1,41 @@
 import { connection, NextResponse } from "next/server";
+import { fetchFootballApiData, FootballApiRequestError } from "@/lib/football-api";
 
 export async function GET() {
   await connection();
-  try {
-    const apiKey = process.env.API_FOOTBALL_KEY;
 
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Football API key is missing." },
-        { status: 500 }
-      );
-    }
-
-    const url = new URL(
-      "https://v3.football.api-sports.io/leagues"
+  const apiKey = process.env.API_FOOTBALL_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { success: false, error: "Football API is not configured." },
+      { status: 503 }
     );
+  }
 
-    url.searchParams.set("current", "true");
+  const url = new URL("https://v3.football.api-sports.io/leagues");
+  url.searchParams.set("current", "true");
 
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        "x-apisports-key": apiKey,
-      },
-      cache: "no-store",
+  try {
+    const data = await fetchFootballApiData<unknown>(url, apiKey, {
+      next: { revalidate: 3600 },
     });
-
-    const data = await response.json();
-
-    if (!response.ok || (data.errors && Object.keys(data.errors).length > 0)) {
-      return NextResponse.json(
-        { error: data.errors || "Unable to retrieve leagues." },
-        { status: response.ok ? 502 : response.status }
-      );
-    }
 
     return NextResponse.json({
       success: true,
-      results: data.results,
+      results: data.results ?? data.response.length,
       leagues: data.response,
     });
-
-  } catch {
+  } catch (error) {
+    console.error("Football leagues API error:", error);
+    const status = error instanceof FootballApiRequestError ? error.status : 502;
     return NextResponse.json(
-      { error: "Something went wrong while retrieving leagues." },
-      { status: 500 }
+      {
+        success: false,
+        error: status === 429
+          ? "The football data provider has reached its request limit."
+          : "Unable to retrieve leagues right now.",
+      },
+      { status }
     );
   }
 }

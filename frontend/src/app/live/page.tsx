@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import Header from "@/components/Header";
@@ -51,10 +51,19 @@ export default function LiveScoresPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
 
-  const loadMatches = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadMatches = useCallback(async (silent = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+
+    if (silent) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const response = await fetch("/api/football/live", {
@@ -102,20 +111,42 @@ export default function LiveScoresPage() {
       }));
 
       setMatches(formattedMatches);
+      setError(null);
       setLastUpdated(new Date());
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong while loading matches."
-      );
+      if (!silent) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Something went wrong while loading matches."
+        );
+      }
     } finally {
-      setLoading(false);
+      refreshInFlight.current = false;
+      if (silent) {
+        setIsRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadMatches();
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadMatches(true);
+      }
+    };
+
+    const interval = window.setInterval(refreshWhenVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [loadMatches]);
 
   const competitions = [...new Set(matches.map((match) => match.league))];
@@ -238,10 +269,10 @@ export default function LiveScoresPage() {
             <button
               type="button"
               onClick={() => void loadMatches()}
-              disabled={loading}
+              disabled={loading || isRefreshing}
               className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-xs font-black text-emerald-400 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
-              {loading ? "Updating Scores..." : "↻ Refresh Scores"}
+              {loading ? "Loading Scores..." : isRefreshing ? "Updating Scores..." : "↻ Refresh Scores"}
             </button>
           </div>
 

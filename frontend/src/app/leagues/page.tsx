@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Header from "@/components/Header";
 import FixtureCard from "@/components/FixtureCard";
 import StandingsTable from "@/components/StandingsTable";
 import Footer from "@/components/Footer";
+import LeagueFavouriteButton from "@/components/LeagueFavouriteButton";
+import FollowedLeaguesPanel from "@/components/FollowedLeaguesPanel";
 
 import type { Match } from "@/types/football";
 
@@ -151,6 +153,29 @@ export default function LeaguesPage() {
   useEffect(() => {
     void fetchLeagues();
   }, [fetchLeagues]);
+
+  const queryLeagueHandled = useRef(false);
+
+  useEffect(() => {
+    if (leagues.length === 0 || queryLeagueHandled.current) return;
+
+    const requestedLeagueId = Number(
+      new URLSearchParams(window.location.search).get("league")
+    );
+
+    if (!Number.isSafeInteger(requestedLeagueId) || requestedLeagueId <= 0) {
+      return;
+    }
+
+    const requestedLeague = leagues.find(
+      (item) => item.league.id === requestedLeagueId
+    );
+
+    if (requestedLeague) {
+      queryLeagueHandled.current = true;
+      void selectLeague(requestedLeague);
+    }
+  }, [leagues]);
 
   async function selectLeague(league: League) {
     setSelectedLeague(league);
@@ -367,6 +392,8 @@ export default function LeaguesPage() {
 
           </div>
         </section>
+
+        <FollowedLeaguesPanel />
 
         {/* COMPETITION DISCOVERY */}
         <section id="competitions" className="mt-8">
@@ -617,6 +644,11 @@ export default function LeaguesPage() {
                   </p>
                 </div>
 
+                <LeagueFavouriteButton
+                  league={selectedLeague.league}
+                  country={{ name: selectedLeague.country.name, flag: selectedLeague.country.flag }}
+                  compact
+                />
                 <button
                   type="button"
                   onClick={() => setSelectedLeague(null)}

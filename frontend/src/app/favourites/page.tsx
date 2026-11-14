@@ -91,7 +91,7 @@ export default function FavouritesPage() {
               </h2>
 
               <p className="mx-auto mt-4 max-w-lg text-sm leading-7 text-slate-400 sm:text-base">
-                You haven't saved any teams yet. Explore the
+                You haven&apos;t saved any teams yet. Explore the
                 football directory and add your favourite clubs
                 or national teams to build your personal collection.
               </p>
@@ -157,8 +157,13 @@ export default function FavouritesPage() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <h3 className="break-words text-lg font-bold leading-snug transition group-hover:text-green-400">
-                          {item.team.name}
+                        <h3 className="break-words text-lg font-bold leading-snug">
+                          <Link
+                            href={`/team/${item.team.id}`}
+                            className="transition-colors hover:text-green-400 focus-visible:text-green-400"
+                          >
+                            {item.team.name}
+                          </Link>
                         </h3>
 
                         <p className="mt-2 text-sm text-slate-400">
