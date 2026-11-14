@@ -96,7 +96,7 @@ export default function DateFixtureBrowser() {
           </div>
           <span className="text-xs text-slate-500">Nigeria time · GMT+1</span>
         </div>
-        <div className="mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
+        <div className="date-strip mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
           {dates.map((date) => {
             const label = dayLabel(date);
             const active = selected === date;

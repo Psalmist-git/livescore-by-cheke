@@ -58,6 +58,7 @@ export default function StandingsTable({
             </h3>
           </div>
 
+          <p className="px-5 py-2 text-[10px] text-slate-500 sm:hidden">Swipe horizontally to view all table columns →</p>
           <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-slate-800/70 text-xs uppercase text-slate-400">

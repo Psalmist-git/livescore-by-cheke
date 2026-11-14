@@ -1008,7 +1008,7 @@ export default function MatchCentreClient({
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#070f1b] text-white">
+      <main className="match-centre-shell min-h-screen bg-[#070f1b] text-white">
         <Header />
         <div className="flex min-h-[65vh] items-center justify-center px-5">
           <div className="text-center">
@@ -1031,7 +1031,7 @@ export default function MatchCentreClient({
 
   if (error && !match) {
     return (
-      <main className="min-h-screen bg-[#070f1b] text-white">
+      <main className="match-centre-shell min-h-screen bg-[#070f1b] text-white">
         <Header />
         <div className="mx-auto max-w-3xl px-5 py-24 text-center">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-2xl">
@@ -1089,10 +1089,10 @@ export default function MatchCentreClient({
   const isDisrupted = ["SUSP", "INT", "INTERRUPTED"].includes(statusCode);
 
   return (
-    <main className="min-h-screen bg-[#070f1b] text-white">
+    <main className="match-centre-shell min-h-screen bg-[#070f1b] text-white">
       <Header />
 
-      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+      <div className="match-centre-content mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
         {/* Breadcrumb */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link
